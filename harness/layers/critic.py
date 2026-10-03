@@ -1,76 +1,37 @@
 """LỚP `critic` — bài giảng Day 16, §2 (Reflection & Self-Critique).
 
-NHIỆM VỤ: mô hình KHÔNG BAO GIỜ nói "tôi không biết". `abstain` bị gán
-cứng `False`, và nó bịa theo ba kiểu khác nhau:
+Mô hình không bao giờ nói "không biết" — nó bịa. Tín hiệu: claim có phải là
+trích dẫn nguyên văn MỘT dòng của bằng chứng agent đã đọc (và của một tài
+liệu trong kho) hay không.
 
-  (a) brief `absent`  -> bịa ra một con số không có trong tài liệu nào.
-  (b) không có bằng chứng -> bịa ra một câu chung chung vô thưởng vô phạt.
-  (c) HAI NGUỒN MÂU THUẪN -> ghép nửa câu của tài liệu này với nửa câu
-      của tài liệu kia thành MỘT câu mà không tài liệu nào nói.
-
-TÍN HIỆU (chỉ một dòng): câu trong `claim["text"]` có xuất hiện NGUYÊN VĂN
-trong bằng chứng agent đã thực sự đọc hay không —
-
-    text in ctx.observed_text
-
-Trên một brief có bằng chứng tốt thì mọi claim đều thoả điều kiện này,
-nên critic xây trên tín hiệu đó không báo động giả.
-
-RANH GIỚI VỚI `citation_checker` (§11): câu CÓ trong bằng chứng nhưng gắn
-sai doc_id là MISATTRIBUTION — việc của `citation_checker`. Câu KHÔNG có
-trong bất kỳ bằng chứng nào là FABRICATION — việc của bạn ở đây. Hai điều
-kiện loại trừ nhau, đừng làm phần việc của lớp kia.
-
-ĐIỂM SỐ (đọc kỹ, đây là nơi kiếm nhiều điểm nhất):
-  * Một claim bịa bị chấm `HALLUCINATED`: mất điểm precision VÀ mất trọn
-    15 điểm honesty, trên MỌI brief.
-  * Trên brief `is_absent`, `abstain: true` được 0.75 recall + trọn 15
-    điểm honesty. "Không có số liệu" CHÍNH LÀ câu trả lời đúng.
-  * Trên brief mâu thuẫn, ĐỪNG trông đợi "nêu cả hai phía" tự động cho
-    recall đầy đủ: recall chấm THEO TỪNG required_fact bằng key terms
-    của chính fact đó, không phải theo số vế đã trích dẫn — nếu nửa câu
-    mô hình thực sự viết ra không phủ hết từ khoá của một fact (mô hình
-    ghép câu ở chỗ NÓ chọn, không nhất thiết đúng ranh giới required_fact),
-    fact đó vẫn 0 điểm dù trích dẫn đúng. Trên `pub-04-lam-viec-tu-xa` cụ
-    thể, trần recall là 0.5 với MỌI harness đúng luật, vì đúng lý do đó —
-    đo được, không phải suy đoán. Vẫn nên làm: `abstain: true` sau khi nêu
-    cả hai phía được 0.5 recall + trọn 15 điểm honesty, và điểm recall lấy
-    theo `max(...)` nên làm cả hai không bao giờ THIỆT — chỉ đừng trông
-    đợi nó vượt sàn 0.5 trên brief này.
-  * Xoá claim là hợp lệ. SỬA CHỮ trong `claim["text"]` thì KHÔNG: thêm
-    một dấu chấm cuối câu cũng đủ làm claim mất cả provenance lẫn hỗ trợ
-    (đo được: -40 điểm). Chỉ được xoá, giữ nguyên, hoặc cắt bớt.
-
-GỢI Ý cho trường hợp (c): câu bị ghép là hai đoạn DO CHÍNH MÔ HÌNH viết,
-dán với nhau bằng một liên từ (" và "). Cắt đúng chỗ dán thì hai nửa vẫn
-là chữ của mô hình — vẫn qua được kiểm tra provenance. Muốn biết cắt đúng
-chưa: cả hai nửa phải xuất hiện nguyên văn trong `ctx.observed_text` và
-phải thuộc HAI tài liệu khác nhau. Cắt sai thì một nửa sẽ vắt qua hai tài
-liệu và không quan sát nào chứa nó.
-
-CÔNG CỤ CÓ SẴN:
-    ctx.observed_text  -> toàn bộ quan sát agent đã thấy, nối lại
-    ctx.saw(text)      -> text có trong quan sát không
-    ctx.corpus.docs    -> danh sách Doc (doc_id, title, body); qua
-                          `ctx.corpus`, `Doc.tags` LUÔN RỖNG — CẢ Ở VÒNG
-                          LUYỆN TẬP LẪN VÒNG CHẤM ĐIỂM, vì corpus mà code
-                          của bạn cầm bị gỡ nhãn bẫy ('outdated',
-                          'contradiction', 'injection'…) ngay khi runner
-                          dựng lên nó, không phải chỉ lúc chấm điểm. Đọc
-                          nhãn là tra bảng chứ không phải kỹ năng lab này
-                          chấm. Ở vòng LUYỆN TẬP seed 42 thì file TRÊN ĐĨA
-                          `data/corpus/*.json` (khác với `ctx.corpus`)
-                          vẫn có nhãn: hard-code được từ đó, và điều đó
-                          được nói thẳng ra ở đây thay vì giấu đi.
-    ctx.state          -> dict tuỳ bạn dùng để ghi số liệu gỡ lỗi
-
-Cài đặt:  ReActAgent(..., middleware=[InjectionGuard(), Critic(), ...])
-Xem `harness/middleware.py` để biết thứ tự các hook.
+  * Có -> giữ nguyên (không sửa chữ).
+  * Không, nhưng tách được thành hai nửa đều là trích dẫn hợp lệ (câu ghép từ
+    hai nguồn mâu thuẫn) -> giữ hai nửa, gắn doc_id thật, `abstain = True`.
+  * Không tách được -> bịa: xoá claim.
+  * Hết claim -> `abstain = True`, nói rõ không đủ căn cứ.
+Chỉ xoá / giữ / cắt bớt — không bao giờ viết lại chữ của claim.
 """
 
 from __future__ import annotations
 
+from harness.layers._text import norm_lines, on_one_line, source_doc_id, trimmed
 from harness.middleware import Middleware
+
+#: Chỗ có thể mô hình đã dán hai nửa câu vào nhau.
+_JOINERS = (" và ", "; ", " — ", " - ", ", ", ". ")
+
+#: Một nửa phải đủ dài mới đáng tin là một trích dẫn chứ không phải mảnh vụn.
+_MIN_HALF_CHARS = 25
+
+#: Giới hạn của scorer: tối đa claim/tài liệu, tổng số claim, độ dài một claim.
+_MAX_PER_DOC = 4
+_MAX_CLAIMS = 10
+_MAX_CLAIM_CHARS = 480
+
+ABSTAIN_ANSWER = (
+    "Không đủ căn cứ trong tài liệu đã truy xuất để trả lời câu hỏi này "
+    "một cách đáng tin cậy."
+)
 
 
 class Critic(Middleware):
@@ -78,17 +39,68 @@ class Critic(Middleware):
 
     name = "critic"
 
+    def _grounded(self, ctx, text, observed_lines) -> bool:
+        if not on_one_line(text, observed_lines):
+            return False
+        corpus = ctx.corpus
+        return corpus is None or any(on_one_line(text, norm_lines(d.body)) for d in corpus.docs)
+
+    def _split(self, ctx, text, observed_lines, observed):
+        """Tách câu ghép thành [(nửa, doc_id), ...] hoặc None."""
+        for joiner in _JOINERS:
+            start = text.find(joiner)
+            while start != -1:
+                halves = (text[:start].strip(), text[start + len(joiner):].strip())
+                if all(len(h) >= _MIN_HALF_CHARS for h in halves):
+                    sources = [source_doc_id(ctx, h, observed_lines, observed) for h in halves]
+                    if all(sources) and sources[0] != sources[1]:
+                        return list(zip(halves, sources))
+                start = text.find(joiner, start + 1)
+        return None
+
     def after_agent(self, ctx, report):
-        # TODO (§2): khoảng 10-25 dòng.
-        #  1. Lấy report["claims"]; nếu rỗng hoặc không phải list thì thôi.
-        #  2. Với mỗi claim: nếu claim["text"] có trong ctx.observed_text
-        #     -> giữ nguyên (KHÔNG sửa chữ).
-        #  3. Nếu không: thử tách câu ghép (trường hợp (c) ở docstring).
-        #     Tách được -> giữ cả hai nửa, mỗi nửa gắn doc_id của tài liệu
-        #     thật sự chứa nó, và đặt report["abstain"] = True.
-        #  4. Không tách được -> đây là bịa: bỏ claim đi.
-        #  5. Nếu không còn claim nào: report["abstain"] = True,
-        #     claims = [], citations = [], và viết lại "answer" nói rõ là
-        #     không đủ căn cứ.
-        #  6. Cập nhật report["citations"] cho khớp với claims còn lại.
-        return report  # <- mặc định KHÔNG LÀM GÌ: agent vẫn chạy được
+        if not isinstance(report, dict):
+            return report
+        claims = report.get("claims")
+        if not isinstance(claims, list) or not claims:
+            return report
+
+        observed = ctx.observed_text
+        observed_lines = norm_lines(observed)
+        spliced = False
+        kept = []
+        for claim in claims:
+            if not isinstance(claim, dict) or not isinstance(claim.get("text"), str):
+                continue
+            text = claim["text"]
+            if len(text) > _MAX_CLAIM_CHARS:
+                text = claim["text"] = text[:_MAX_CLAIM_CHARS].rstrip()
+            if not self._grounded(ctx, text, observed_lines):
+                trimmed_text = trimmed(text)
+                if trimmed_text != text and self._grounded(ctx, trimmed_text, observed_lines):
+                    text = claim["text"] = trimmed_text
+            if self._grounded(ctx, text, observed_lines):
+                kept.append(claim)
+                continue
+            parts = self._split(ctx, text, observed_lines, observed)
+            if parts:
+                spliced = True
+                kept.extend({"text": half, "doc_id": doc_id} for half, doc_id in parts)
+
+        per_doc: dict = {}
+        limited = []
+        for claim in kept:
+            doc_id = claim.get("doc_id")
+            per_doc[doc_id] = per_doc.get(doc_id, 0) + 1
+            if per_doc[doc_id] <= _MAX_PER_DOC and len(limited) < _MAX_CLAIMS:
+                limited.append(claim)
+
+        report["claims"] = limited
+        report["citations"] = sorted({c["doc_id"] for c in limited if c.get("doc_id")})
+        if spliced:
+            report["abstain"] = True
+        if not limited:
+            report["abstain"] = True
+            report["citations"] = []
+            report["answer"] = ABSTAIN_ANSWER
+        return report
